@@ -6,6 +6,7 @@ import asyncio
 
 app = FastAPI()
 
+ (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,20 +29,22 @@ async def analyze_url(req: URLRequest):
 
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch()
-            page = await browser.new_page()
-            await page.goto(url, timeout=15000)
-            cookies = await page.context.cookies()
-            result["cookies"] = len(cookies)
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context()
+            page = await context.new_page()
+
             external_requests = []
 
-            def log_request(route):
-                if any(domain in route.request.url for domain in ["tracker", "ads", "analytics"]):
-                    external_requests.append(route.request.url)
+            
+            page.on("request", lambda request: external_requests.append(request.url) if any(term in request.url.lower() for term in ["tracker", "ads", "analytics", "doubleclick", "facebook", "google"]) else None)
 
-            page.on("request", log_request)
-            await asyncio.sleep(3)
+            await page.goto(url, timeout=15000)
+            await asyncio.sleep(3)  
+
+            cookies = await context.cookies()
+            result["cookies"] = len(cookies)
             result["trackers"] = len(set(external_requests))
+
             await browser.close()
 
     except Exception as e:
